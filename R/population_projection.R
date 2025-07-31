@@ -61,7 +61,8 @@ pop_grouped <- pop_est%>%
 mort_data_path <- file.path(mortality_data_path_prefix,
                            "deaths_by_year_sex_ageband_2019_2023_bham.csv")
 
-mort_data <- read.csv(mort_data_path) %>%
+mort_rates <- read.csv(mort_data_path) %>%
+  filter(!is.na(Sex)) %>%
   group_by(
     Sex, AgeBand
   ) %>%
@@ -74,14 +75,46 @@ mort_data <- read.csv(mort_data_path) %>%
     by = join_by(Sex, AgeBand)
   ) %>%
   mutate(
+    AgeBand = factor(AgeBand, levels = unique(pop_grouped$AgeBand)),
     p_hat = Deaths5Years / (5 * Population),
-    Value = 1e5 * p_hat,
+    MortRate = 1e5 * p_hat,
     a_prime = Deaths5Years + 1,
     Z = qnorm(0.975),
-    LowerCI95 = 1e5 * Deaths5Years * (1 - 1/(9*Deaths5Years) - Z/3 * sqrt(1/a_prime))**3/(5 * Population),
-    UpperCI95 = 1e5 * a_prime * (1 - 1/(9*a_prime) + Z/3 * sqrt(1/a_prime))**3/(5 * Population)
+    MortRateLowerCI95 = 1e5 * Deaths5Years * (1 - 1/(9*Deaths5Years) - Z/3 * sqrt(1/a_prime))**3/(5 * Population),
+    MortRateUpperCI95 = 1e5 * a_prime * (1 - 1/(9*a_prime) + Z/3 * sqrt(1/a_prime))**3/(5 * Population)
   )
 
 
+################################################################################
+#                           Plot mortality rates                               #
+################################################################################
+
+male_color <- "#9657E0"
+female_color <- "#1DAA47"
+
+ggplot(mort_rates, aes(x = AgeBand, y = MortRate, fill = Sex)) +
+  geom_col(position = "dodge") +
+  geom_errorbar(
+    aes(x = AgeBand, ymin = MortRateLowerCI95, ymax = MortRateUpperCI95),
+    width = 0.5,
+    position = position_dodge(0.9),
+    ) +
+  theme_bw() +
+  labs(
+    y = "Average annual deaths\nper 100,000 population (2019-2023)",
+    x = "Age band (Years)",
+    fill = ""
+  ) +
+  scale_fill_manual(values = c(female_color, male_color)) +
+  theme(
+    legend.position = "top",
+    legend.direction="horizontal"
+  )+
+  scale_y_continuous(
+    limits = c(0, 26e3),
+    expand = c(0,0)
+  )
+
+ggsave("output/mortality_rates_19to23.png", width = 8, height = 4)
 
 
