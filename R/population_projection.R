@@ -61,8 +61,14 @@ pop_grouped <- pop_est%>%
 mort_data_path <- file.path(mortality_data_path_prefix,
                            "deaths_by_year_sex_ageband_2019_2023_bham.csv")
 
+NumYears = 3
+
 mort_rates <- read.csv(mort_data_path) %>%
-  filter(!is.na(Sex)) %>%
+  filter(
+    !is.na(Sex),
+    # Filter out pandemic
+    YearofDeath %in% c(2019, 2022, 2023)
+    ) %>%
   group_by(
     Sex, AgeBand
   ) %>%
@@ -76,12 +82,12 @@ mort_rates <- read.csv(mort_data_path) %>%
   ) %>%
   mutate(
     AgeBand = factor(AgeBand, levels = unique(pop_grouped$AgeBand)),
-    p_hat = Deaths5Years / (5 * Population),
+    p_hat = Deaths5Years / (NumYears * Population),
     MortRate = 1e5 * p_hat,
     a_prime = Deaths5Years + 1,
     Z = qnorm(0.975),
-    MortRateLowerCI95 = 1e5 * Deaths5Years * (1 - 1/(9*Deaths5Years) - Z/3 * sqrt(1/a_prime))**3/(5 * Population),
-    MortRateUpperCI95 = 1e5 * a_prime * (1 - 1/(9*a_prime) + Z/3 * sqrt(1/a_prime))**3/(5 * Population)
+    MortRateLowerCI95 = 1e5 * Deaths5Years * (1 - 1/(9*Deaths5Years) - Z/3 * sqrt(1/a_prime))**3/(NumYears * Population),
+    MortRateUpperCI95 = 1e5 * a_prime * (1 - 1/(9*a_prime) + Z/3 * sqrt(1/a_prime))**3/(NumYears * Population)
   )
 
 
@@ -101,7 +107,7 @@ ggplot(mort_rates, aes(x = AgeBand, y = MortRate, fill = Sex)) +
     ) +
   theme_bw() +
   labs(
-    y = "Average annual deaths\nper 100,000 population (2019-2023)",
+    y = "Average annual deathsper 100,000\npopulation (2019, 2022, 2023)",
     x = "Age band (Years)",
     fill = ""
   ) +
