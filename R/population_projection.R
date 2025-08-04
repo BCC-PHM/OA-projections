@@ -51,7 +51,7 @@ pop_grouped <- pop_est%>%
     .groups = "drop"
   ) %>%
   mutate(
-    Year = 2024,
+    Year = 2023,
     AgeBandSortable = as.numeric(sub("^([0-9]+).*", "\\1", AgeBand))
   ) %>%
   select(
@@ -142,7 +142,7 @@ estimate_next_five <- function(
   
   # Get new year
   next_year <- unique(current_population$Year) + 5
-  print(Year)
+
   # Get 0 to 4 population to propagate births
   pop_0to4 <- current_population %>%
     filter(AgeBand == "0-4")
@@ -161,7 +161,11 @@ estimate_next_five <- function(
   # Apply mortality
   pop_after_deaths <- joined %>%
     mutate(
-      Population = Population * (1 - 5 * MortRate),
+      # Approximate standard deviation
+      sd = (MortRateUpperCI95 - MortRateLowerCI95) / (2 * 1.96),
+      MortRateRandom = rnorm(n = n(), mean=MortRate, sd=sd),
+      # Calculate new population
+      Population = Population * (1 - 5 * MortRateRandom),
     )
   
   age_groups <- levels(joined$AgeBand)
@@ -204,29 +208,129 @@ estimate_next_five <- function(
   return(aged_up)
   
 }
- 
-prop_proj_list <- list("2023" = pop_grouped)
- 
-for (Year in seq(2028, 2053, 5)) {
-  prop_proj_list[[as.character(Year)]] <- estimate_next_five(
-    prop_proj_list[[as.character(Year - 5)]],
-    mort_rates
+
+project_population <- function(
+    current_population,
+    mortality_rates,
+    start_year,
+    stop_year,
+    run_index
+) {
+  
+  set.seed(run_index)
+  
+  prop_proj_list <- setNames(
+    list(current_population),
+    as.character(start_year)
   )
+  
+  for (Year in seq(start_year + 5, stop_year, 5)) {
+    prop_proj_list[[as.character(Year)]] <- estimate_next_five(
+      prop_proj_list[[as.character(Year - 5)]],
+      mortality_rates
+    )
+  }
+  
+  pop_proj <- rbindlist(prop_proj_list) %>%
+    mutate(
+      run_index := run_index
+    )
+  
+  return(pop_proj)
+  
 }
 
-pop_proj <- rbindlist(prop_proj_list)
+# Run projection 1000 times drawing different values from mortality rate 
+# distribution each time
+run_list <- list()
+for (i in 1:1000) {
+  run_list[[i]] <- project_population(
+    current_population = pop_grouped,
+    mortality_rates = mort_rates,
+    start_year = 2023,
+    stop_year = 2053,
+    run_index = i
+  )
+}
+# Combine all runs
+all_runs <- rbindlist(run_list)
 
-proj_plot <- pop_proj %>% 
+# Save population projections
+writexl::write_xlsx(
+  all_runs,
+  "output/population_projections.xlsx"
+)
+
+# Visualise population projection by age and sex
+
+mean_val_grouped <- all_runs %>%
+  group_by(
+    Year, Sex, AgeBand, AgeBandSortable
+  ) %>%
+  summarise(
+    PopUpperCI95 = quantile(Population, 0.975),
+    PopLowerCI95 = quantile(Population, 0.025),
+    Population = mean(Population),
+    .groups = "drop"
+  )
+
+proj_plot <- mean_val %>% 
   filter(AgeBandSortable > 45) %>%
   ggplot(aes(x = Year, y = Population)) +
+  geom_ribbon(
+    aes(x = Year, ymax = PopUpperCI95, ymin = PopLowerCI95),
+    fill = "#5FB3FA",
+    alpha = 0.5
+  ) +
   geom_line() +
   theme_bw() +
   facet_grid(
     rows = vars(AgeBand), 
     cols = vars(Sex),
     scales="free_y"
+  ) +
+  labs(
+    y = "Projected Population"
   )
 proj_plot
 
-ggsave("output/basic-projection.png",
+ggsave("output/projection_with_uncertainty.png",
        proj_plot, width = 5, height = 8)
+
+# Visualise population projection for 65+ only
+
+older_adult_pop <- all_runs %>%
+  filter(
+    AgeBandSortable >= 65
+  ) %>%
+  group_by(Year, run_index) %>%
+  summarise(
+    Population = sum(Population)
+  ) %>% 
+  group_by(Year) %>%
+  summarise(
+    PopUpperCI95 = quantile(Population, 0.975),
+    PopLowerCI95 = quantile(Population, 0.025),
+    Population = mean(Population),
+    .groups = "drop"
+  )
+
+
+proj_plot_comb <- older_adult_pop %>%
+  ggplot(aes(x = Year, y = Population)) +
+  geom_ribbon(
+    aes(x = Year, ymax = PopUpperCI95, ymin = PopLowerCI95),
+    fill = "#5FB3FA",
+    alpha = 0.5
+  ) +
+  geom_line() +
+  theme_bw() +
+  labs(
+    y = "Projected Population Aged 65+"
+  )
+
+proj_plot_comb
+
+ggsave("output/projection_65plus.png",
+       proj_plot_comb, width = 5, height = 3)
+
