@@ -5,10 +5,20 @@ library(tidyr)
 library(data.table)
 library(ggplot2)
 
+# Seems like 1.11 is needed to match the 2023 "actuals" value of ~14,000
+scale_factor = 1.0
+
+################################################################################
+#                                Load data                                     #
+################################################################################
+
 # Load CFAS II reference rates
 dementia_prevs <- read_excel("data/dementia-reference-rates.xlsx") %>%
   mutate(
-    sd = (DementiaPrevalence95Upper - DementiaPrevalence95Lower) / (2 * 1.96)
+    # Apply scale factor
+    DementiaPrevalence = scale_factor * DementiaPrevalence,
+    # Estimate standard deviation
+    sd = scale_factor * (DementiaPrevalence95Upper - DementiaPrevalence95Lower) / (2 * 1.96)
   )
 
 # Load population projections
@@ -24,7 +34,7 @@ pop_proj <- read_excel("output/population_projections.xlsx") %>%
 male_color <- "#9657E0"
 female_color <- "#1DAA47"
 
-dementia_prevs <- ggplot(dementia_prevs, aes(
+dementia_prev_plot <- ggplot(dementia_prevs, aes(
   x = AgeBand,
   y = DementiaPrevalence,
   fill = Sex
@@ -55,10 +65,10 @@ dementia_prevs <- ggplot(dementia_prevs, aes(
     fill = ""
   )
 
-dementia_prevs
+dementia_prev_plot
 
 ggsave("output/dementia_prevs.png",
-       dementia_prevs,
+       dementia_prev_plot,
        height = 3,
        width = 5)
 
@@ -98,6 +108,10 @@ for (i in 1:1000) {
   run_list[[i]] <- projection_i
 }
 
+################################################################################
+#        Combine all runs and calculate mean and confidence intervals          #
+################################################################################
+
 # Combine all runs
 estimated_prevalence <- rbindlist(run_list) %>%
   group_by(
@@ -117,7 +131,9 @@ estimated_prevalence <- rbindlist(run_list) %>%
     .groups = "drop"
   )
 
-# Plot dementia prevalence projection
+################################################################################
+#                     Plot dementia prevalence projection                      #
+################################################################################
 
 dementia_prev_proj <- ggplot(
   estimated_prevalence, 
@@ -177,7 +193,7 @@ dementia_count_proj <- ggplot(
   geom_line() +
   theme_bw() +
   scale_y_continuous(
-    limits = c(0, 1e4),
+    limits = c(0, 1.8e4),
     expand = c(0,0),
   ) +
   scale_fill_manual(values = c(female_color, male_color)) +
@@ -196,3 +212,18 @@ dementia_count_proj
 
 ggsave("output/dementia_count_projection.png",
        dementia_count_proj, width = 5, height = 3)
+
+################################################################################
+#                            Save Excel Output                                 #
+################################################################################
+
+
+output <- list(
+  "Dementia Projection" = estimated_prevalence
+)
+
+writexl::write_xlsx(
+  output,
+  path = "output/dementia-projection.xlsx"
+)
+
