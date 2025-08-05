@@ -11,53 +11,41 @@ library(ggplot2)
 # Using 2023 instead of 2024 for better consistency with mortality data
 
 # https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationestimates/datasets/estimatesofthepopulationforenglandandwales
-pop_data_path <- file.path(pop_data_path_prefix,
-                           "Population EstimatesMID 2023 LA Level 230725.xlsx")
 
-# Define a function to process each sheet
-read_gender_sheet <- function(sheet_name) {
-  read_excel(pop_data_path, sheet = sheet_name, skip = 7) %>%
-    filter(Name == "Birmingham") %>%
-    pivot_longer(cols = 5:95, names_to = "Age", values_to = "Count") %>%
-    mutate(Sex = gsub("MYE2 - ", "", sheet_name),
-           Sex = gsub("s", "", Sex)) %>%
-    select(Age, Count, Sex)
-}
-
-# Read and combine male and female data
-pop_est <- c("MYE2 - Females", "MYE2 - Males") %>%
-  lapply(read_gender_sheet) %>%
-  rbindlist() 
-
-pop_grouped <- pop_est%>%
-  # aggregate into 5 year bands
+pop_grouped <- read.csv(file.path(
+  pop_data_path_prefix,
+  "GP_reg_data_full_Dec_24.csv"
+)) %>%
+  filter(
+    # Birmingham only
+    Locality %in% c("North", "South", "East", "West", "Central"),
+    Gender %in% c("Male", "Female")
+  ) %>%
   mutate(
-    Age = as.numeric(gsub("\\+", "", Age)),
-    AgeBand = cut(
-      Age,
-      breaks = seq(0, 95, 5),
-      labels = c("0-4", "5-9", "10-14", "15-19", "20-24",
-                 "25-29", "30-34", "35-39", "40-44", "45-49",
-                 "50-54", "55-59", "60-64", "65-69", "70-74",
-                 "75-79", "80-84", "85-89", "90+"),
-      right = FALSE
+    Sex = Gender,
+    AgeBand = case_when(
+      AgeBand %in% c("90-94", "95-99", "100-104", "105-109", "110-114") ~ "90+",
+      AgeBand == "05-Sep" ~ "5-9",
+      AgeBand == "Oct-14" ~ "10-14",
+      TRUE ~ AgeBand
     )
   ) %>%
   group_by(
     Sex, AgeBand
   ) %>%
   summarise(
-    Population = sum(Count),
+    Population = sum(Observations),
     .groups = "drop"
   ) %>%
   mutate(
-    Year = 2023,
+    Year = 2024,
     AgeBandSortable = as.numeric(sub("^([0-9]+).*", "\\1", AgeBand))
   ) %>%
+  arrange(Sex, AgeBandSortable) %>%
   select(
     Sex, AgeBand, AgeBandSortable, Population, Year
   )
-
+  
 ################################################################################
 #                      Load and process mortality data                         #
 ################################################################################
@@ -115,7 +103,7 @@ ggplot(mort_rates, aes(x = AgeBand, y = 1e5*MortRate, fill = Sex)) +
     ) +
   theme_bw() +
   labs(
-    y = "Average annual deathsper 100,000\npopulation (2019, 2022, 2023)",
+    y = "Average annual deaths per 100,000\npopulation (2019, 2022, 2023)",
     x = "Age band (Years)",
     fill = ""
   ) +
@@ -166,14 +154,19 @@ estimate_next_five <- function(
       MortRateRandom = rnorm(n = n(), mean=MortRate, sd=sd),
       # Calculate new population
       Population = Population * (1 - 5 * MortRateRandom),
+      AgeBand = as.factor(AgeBand)
     )
   
-  age_groups <- levels(joined$AgeBand)
+  age_groups <- levels(factor(joined$AgeBand))
+  
+  #print(age_groups)
   
   shift_lookup <- setNames(
     c(age_groups[-1], "90+"),  # Destination (note last one repeats)
     age_groups                 # Current
   )
+  
+  #print(shift_lookup)
 
   # Apply the shift
   aged_up <- pop_after_deaths %>%
@@ -247,8 +240,8 @@ for (i in 1:1000) {
   run_list[[i]] <- project_population(
     current_population = pop_grouped,
     mortality_rates = mort_rates,
-    start_year = 2023,
-    stop_year = 2053,
+    start_year = 2024,
+    stop_year = 2054,
     run_index = i
   )
 }
@@ -274,7 +267,7 @@ mean_val_grouped <- all_runs %>%
     .groups = "drop"
   )
 
-proj_plot <- mean_val %>% 
+proj_plot <- mean_val_grouped %>% 
   filter(AgeBandSortable > 45) %>%
   ggplot(aes(x = Year, y = Population)) +
   geom_ribbon(
