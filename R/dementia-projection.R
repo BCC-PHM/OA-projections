@@ -174,7 +174,7 @@ ggsave("output/dementia_prev_projection.png",
        dementia_prev_proj, width = 5, height = 3)
 
 
-# Plot dementia prevalence projection
+# Plot dementia count projection
 
 dementia_count_proj <- ggplot(
   estimated_prevalence, 
