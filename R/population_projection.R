@@ -45,6 +45,8 @@ pop_grouped <- read.csv(file.path(
   select(
     Sex, AgeBand, AgeBandSortable, Population, Year
   )
+
+writexl::write_xlsx(pop_grouped, "data/Birmingham-GP-reg-pop-Dec24.xlsx")
   
 ################################################################################
 #                      Load and process mortality data                         #

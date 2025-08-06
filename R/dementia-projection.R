@@ -5,7 +5,7 @@ library(tidyr)
 library(data.table)
 library(ggplot2)
 
-# Seems like 1.11 is needed to match the 2023 "actuals" value of ~14,000
+# Not needed in retrospect
 scale_factor = 1.0
 
 ################################################################################
