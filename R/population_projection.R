@@ -122,12 +122,72 @@ ggplot(mort_rates, aes(x = AgeBand, y = 1e5*MortRate, fill = Sex)) +
 ggsave("output/mortality_rates_19to23.png", width = 8, height = 4)
 
 ################################################################################
-#                        Project populations                                   #
+#                           Load Migration Data                                #
+################################################################################
+
+migration_data <- read_excel("data/Bimringham_internal_migration.xlsx")
+
+migration_plot_data <- migration_data %>%
+  mutate(
+    AgeBandSortable = as.numeric(stringr::str_extract(AgeBand, "^\\d{1,2}")),
+    Outward_Migration = - Outward_Migration,
+    Net_Migration = Inward_Migration + Outward_Migration
+  ) %>%
+  tidyr::pivot_longer(
+    cols = contains("Migration"),
+    values_to = "Yearly_Migration",
+    names_to = "Migration_Type"
+  ) %>%
+  arrange(AgeBandSortable)%>%
+  mutate(
+    direction = case_when(
+      Yearly_Migration < 0 ~ "Out",
+      TRUE ~ "In"
+    ),
+    AgeBand = factor(AgeBand, 
+                     levels=unique(AgeBand), 
+                     ordered=TRUE)
+  ) 
+
+labels = c(
+  Female = "Female",
+  Male = "Male",
+  Inward_Migration = "Inward",
+  Net_Migration = "Net",
+  Outward_Migration = "Out"
+)
+
+mig_plot <- ggplot(
+  migration_plot_data, 
+  aes(x = AgeBand, y = Yearly_Migration, fill = direction)
+  ) +
+  geom_col() +
+  theme_bw() +
+  facet_grid(
+    rows = vars(Migration_Type), 
+    cols = vars(Sex),
+    scales="free_y",
+    labeller = as_labeller(labels)
+    ) + 
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+    legend.position = "none"
+    ) +
+  labs(
+    y = "Yearly Internal Migration in Birmingham (2024)",
+    x = ""
+  )
+mig_plot
+ggsave("output/migration.png", width = 6, height = 4)
+
+################################################################################
+#                        Projehttp://127.0.0.1:40709/graphics/6b00a20a-e55a-4a49-80e0-eab80fa3381e.pngct populations                                   #
 ################################################################################
 
 estimate_next_five <- function(
   current_population,
-  mortality_rates
+  mortality_rates,
+  migration_data = NULL
 ) {
   
   # Get new year
@@ -147,6 +207,25 @@ estimate_next_five <- function(
     arrange(
       Sex, AgeBandSortable
     )
+  
+  # Apply migration if data given
+  if (!is.null(migration_data)) {
+    # Check migration data has the correct column names
+    if(!all(c("Sex", "AgeBand") %in% colnames(migration_data))) {
+      stop("Migration data must have columns: 'Sex' and 'AgeBand'")
+    }
+    
+    pop_after_migration <- joined %>%
+      left_join(
+        migration_data,
+        by = join_by(Sex, AgeBand)
+        ) %>%
+      mutate(
+        Population = Population + Inward_Migration - Outward_Migration
+      )
+  } else {
+    pop_after_migration <- joined
+   }
   
   # Apply mortality
   pop_after_deaths <- joined %>%
@@ -209,7 +288,8 @@ project_population <- function(
     mortality_rates,
     start_year,
     stop_year,
-    run_index
+    run_index,
+    migration_data = NULL
 ) {
   
   set.seed(run_index)
@@ -222,7 +302,8 @@ project_population <- function(
   for (Year in seq(start_year + 5, stop_year, 5)) {
     prop_proj_list[[as.character(Year)]] <- estimate_next_five(
       prop_proj_list[[as.character(Year - 5)]],
-      mortality_rates
+      mortality_rates,
+      migration_data = migration_data
     )
   }
   
