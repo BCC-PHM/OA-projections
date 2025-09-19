@@ -211,24 +211,28 @@ estimate_next_five <- function(
   # Apply migration if data given
   if (!is.null(migration_data)) {
     # Check migration data has the correct column names
-    if(!all(c("Sex", "AgeBand") %in% colnames(migration_data))) {
+    if(!all(
+      c("Sex", "AgeBand", "Inward_Migration", "Outward_Migration") %in% colnames(migration_data)
+      )
+      ) {
       stop("Migration data must have columns: 'Sex' and 'AgeBand'")
     }
-    
     pop_after_migration <- joined %>%
       left_join(
         migration_data,
         by = join_by(Sex, AgeBand)
         ) %>%
       mutate(
-        Population = Population + Inward_Migration - Outward_Migration
+        Population = Population + 5 * Inward_Migration - 5 * Outward_Migration
       )
+    
+    #print(head(pop_after_migration))
   } else {
     pop_after_migration <- joined
    }
   
   # Apply mortality
-  pop_after_deaths <- joined %>%
+  pop_after_deaths <- pop_after_migration %>%
     mutate(
       # Approximate standard deviation
       sd = (MortRateUpperCI95 - MortRateLowerCI95) / (2 * 1.96),
@@ -325,7 +329,8 @@ for (i in 1:1000) {
     mortality_rates = mort_rates,
     start_year = 2024,
     stop_year = 2054,
-    run_index = i
+    run_index = i,
+    migration_data = migration_data
   )
 }
 # Combine all runs
@@ -366,47 +371,10 @@ proj_plot <- mean_val_grouped %>%
     scales="free_y"
   ) +
   labs(
-    y = "Projected Population"
+    y = "Projected Population (with migration)"
   )
 proj_plot
 
 ggsave("output/projection_with_uncertainty.png",
        proj_plot, width = 5, height = 8)
-
-# Visualise population projection for 65+ only
-
-older_adult_pop <- all_runs %>%
-  filter(
-    AgeBandSortable >= 65
-  ) %>%
-  group_by(Year, run_index) %>%
-  summarise(
-    Population = sum(Population)
-  ) %>% 
-  group_by(Year) %>%
-  summarise(
-    PopUpperCI95 = quantile(Population, 0.975),
-    PopLowerCI95 = quantile(Population, 0.025),
-    Population = mean(Population),
-    .groups = "drop"
-  )
-
-
-proj_plot_comb <- older_adult_pop %>%
-  ggplot(aes(x = Year, y = Population)) +
-  geom_ribbon(
-    aes(x = Year, ymax = PopUpperCI95, ymin = PopLowerCI95),
-    fill = "#5FB3FA",
-    alpha = 0.5
-  ) +
-  geom_line() +
-  theme_bw() +
-  labs(
-    y = "Projected Population Aged 65+"
-  )
-
-proj_plot_comb
-
-ggsave("output/projection_65plus.png",
-       proj_plot_comb, width = 5, height = 3)
 
