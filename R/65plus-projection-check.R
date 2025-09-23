@@ -1,6 +1,7 @@
 # Checking 65+ projections against expected by ONS
 library(readxl)
 library(dplyr)
+library(ggplot2)
 
 older_adult_pop <- read_excel("output/population_projections.xlsx") %>%
   mutate(
@@ -25,9 +26,9 @@ older_adult_pop <- read_excel("output/population_projections.xlsx") %>%
     Year, Type
   ) %>%
   summarize(
-    Population = mean(Population),
     PopUpperCI95 = quantile(Population, 0.975),
     PopLowerCI95 = quantile(Population, 0.025),
+    Population = mean(Population)
   ) %>%
   mutate(
     PercChange = 100*(Population - 176573) / 176573
@@ -42,6 +43,7 @@ ONS_projection <- data.frame(
 proj_plot_comb <- older_adult_pop %>%
   ggplot(aes(x = Year, y = Population/1e5, color = Type)) +
   geom_line() +
+  geom_point() +
   geom_point(
     data = ONS_projection, 
     aes(x = Year, y = 1.155 * Population/1e5)
@@ -74,3 +76,13 @@ proj_plot_comb <- older_adult_pop %>%
 proj_plot_comb
 ggsave("output/projection_65plus.png",
        proj_plot_comb, width = 5, height = 3.2)
+
+
+## Save data
+proj_output <- 
+  list(
+    "BCC Projection" = older_adult_pop %>% arrange(Type, Year),
+    "ONS Projection" = ONS_projection
+  )
+
+writexl::write_xlsx(proj_output, "output/OA-projection.xlsx")
